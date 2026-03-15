@@ -1,0 +1,351 @@
+# Public power data sources used by the PoC.
+# expected_columns are canonical raw headers after trivial whitespace cleanup.
+
+sources:
+  # JEPX spot market annual CSV, filtered to a single biz_date in parser.
+  - source_name: jepx_spot
+    domain: www.jepx.jp
+    page_url: https://www.jepx.jp/electricpower/market-data/spot/
+    fetch_mode: http
+    file_format: csv
+    encoding: shift_jis
+    grain: 30m
+    expected_columns:
+      - 受渡日
+      - 時刻コード
+      - 売り入札量(kWh)
+      - 買い入札量(kWh)
+      - 約定総量(kWh)
+      - システムプライス(円/kWh)
+      - エリアプライス北海道(円/kWh)
+      - エリアプライス東北(円/kWh)
+      - エリアプライス東京(円/kWh)
+      - エリアプライス中部(円/kWh)
+      - エリアプライス北陸(円/kWh)
+      - エリアプライス関西(円/kWh)
+      - エリアプライス中国(円/kWh)
+      - エリアプライス四国(円/kWh)
+      - エリアプライス九州(円/kWh)
+      - 売りブロック入札総量(kWh)
+      - 売りブロック約定総量(kWh)
+      - 買いブロック入札総量(kWh)
+      - 買いブロック約定総量(kWh)
+    primary_key:
+      - market_ts_jst
+      - area_name
+    validations:
+      not_null:
+        - market_ts_jst
+        - area_name
+        - system_price_jpy_per_kwh
+      unique:
+        - market_ts_jst
+        - area_name
+      range:
+        system_price_jpy_per_kwh:
+          min: -100.0
+          max: 500.0
+        area_price_jpy_per_kwh:
+          min: -100.0
+          max: 500.0
+        contracted_volume_kwh:
+          min: 0.0
+          max: 1000000000.0
+      missing_dates:
+        frequency_minutes: 30
+    schedule:
+      now: "15 12,18 * * *"
+      daily: "10 2 * * *"
+      backfill: manual
+    retention:
+      raw_days: 3650
+      snapshots_days: 3650
+      facts_days: 3650
+    raw_paths:
+      method: POST
+      url: https://www.jepx.jp/_download.php
+      dir: spot_summary
+    parser:
+      target_table: fact_spot_30m
+      market_code: jepx_spot
+    loader:
+      fact_sql: sql/upsert_fact_spot_30m.sql
+
+  # JEPX intraday annual CSV, also fetched by fiscal year.
+  - source_name: jepx_intraday
+    domain: www.jepx.jp
+    page_url: https://www.jepx.jp/electricpower/market-data/intraday/
+    fetch_mode: http
+    file_format: csv
+    encoding: shift_jis
+    grain: 30m
+    expected_columns:
+      - 年月日
+      - 時刻コード
+      - 始値(円/kWh)
+      - 高値(円/kWh)
+      - 安値(円/kWh)
+      - 終値(円/kWh)
+      - 平均(円/kWh)
+      - 約定量合計(kWh)
+      - 約定件数
+    primary_key:
+      - market_ts_jst
+    validations:
+      not_null:
+        - market_ts_jst
+        - average_price_jpy_per_kwh
+      unique:
+        - market_ts_jst
+      range:
+        average_price_jpy_per_kwh:
+          min: -100.0
+          max: 500.0
+        total_contracted_volume_kwh:
+          min: 0.0
+          max: 1000000000.0
+        contract_count:
+          min: 0
+          max: 1000000
+      missing_dates:
+        frequency_minutes: 30
+    schedule:
+      now: "20 12,18 * * *"
+      daily: "15 2 * * *"
+      backfill: manual
+    retention:
+      raw_days: 3650
+      snapshots_days: 3650
+      facts_days: 3650
+    raw_paths:
+      method: POST
+      url: https://www.jepx.jp/_download.php
+      dir: intraday
+    parser:
+      target_table: fact_intraday_30m
+      market_code: jepx_intraday
+    loader:
+      fact_sql: sql/upsert_fact_intraday_30m.sql
+
+  # OCCTO reserve ratio daily ZIP from the public disclosure system.
+  - source_name: occto_reserve_ratio
+    domain: web-kohyo.occto.or.jp
+    page_url: https://web-kohyo.occto.or.jp/kks-web-public/
+    fetch_mode: http
+    file_format: zip
+    encoding: utf-8-sig
+    grain: 30m
+    expected_columns:
+      - 対象年月日
+      - 時刻
+      - ブロックNo
+      - エリア名
+      - 広域ブロック需要(MW)
+      - 広域ブロック供給力(MW)
+      - 広域ブロック予備力(MW)
+      - 広域予備率(%)
+      - 広域使用率(%)
+      - エリア需要(MW)
+      - エリア供給力(MW)
+      - エリア予備力(MW)
+    primary_key:
+      - market_ts_jst
+      - area_name
+    validations:
+      not_null:
+        - market_ts_jst
+        - area_name
+        - block_reserve_rate_pct
+      unique:
+        - market_ts_jst
+        - area_name
+      range:
+        area_reserve_mw:
+          min: -50000.0
+          max: 100000.0
+        block_reserve_rate_pct:
+          min: -100.0
+          max: 1000.0
+      missing_dates:
+        frequency_minutes: 30
+    schedule:
+      now: "30 */3 * * *"
+      daily: "20 2 * * *"
+      backfill: manual
+    retention:
+      raw_days: 3650
+      snapshots_days: 3650
+      facts_days: 3650
+    raw_paths:
+      method: GET
+      url: https://web-kohyo.occto.or.jp/kks-web-public/home/download
+      range: today
+    parser:
+      target_table: fact_reserve_ratio_30m
+      zip_member_hint: ブロック情報
+    loader:
+      fact_sql: sql/upsert_fact_reserve_ratio_30m.sql
+
+  # OCCTO intertie actual flow CSV, one raw file per intertie line.
+  - source_name: occto_intertie
+    domain: occtonet3.occto.or.jp
+    page_url: https://occtonet3.occto.or.jp/public/dfw/RP11/OCCTO/SD/LOGIN_login#
+    fetch_mode: browser_csv
+    file_format: csv
+    encoding: cp932
+    grain: 5m
+    expected_columns:
+      - 連系線
+      - 対象日付
+      - 対象時刻
+      - 潮流実績
+    primary_key:
+      - market_ts_jst
+      - asset_code
+    validations:
+      not_null:
+        - market_ts_jst
+        - asset_code
+        - actual_flow_mw
+      unique:
+        - market_ts_jst
+        - asset_code
+      range:
+        actual_flow_mw:
+          min: -20000.0
+          max: 20000.0
+      missing_dates:
+        frequency_minutes: 5
+    schedule:
+      now: "40 */3 * * *"
+      daily: "30 2 * * *"
+      backfill: manual
+    retention:
+      raw_days: 3650
+      snapshots_days: 3650
+      facts_days: 3650
+    raw_paths:
+      login_url: https://occtonet3.occto.or.jp/public/dfw/RP11/OCCTO/SD/LOGIN_login#
+      menu_selector: "#menu1-1-3-1"
+      target_date_selector: "#spcDay"
+      line_selector: "#tgtRkl"
+      search_selector: "#searchBtn"
+      csv_selector: "#csvBtn"
+    parser:
+      target_table: fact_intertie_flow_5m
+    loader:
+      fact_sql: sql/upsert_fact_intertie_flow_5m.sql
+
+  # OCCTO intra-area trunk flow CSV, one raw file per area.
+  - source_name: occto_trunk
+    domain: occtonet3.occto.or.jp
+    page_url: https://occtonet3.occto.or.jp/public/dfw/RP11/OCCTO/SD/LOGIN_login#
+    fetch_mode: browser_csv
+    file_format: csv
+    encoding: cp932
+    grain: 30m
+    expected_columns:
+      - 対象年月日
+      - 対象エリア
+      - 電圧
+      - 送電線名
+      - 潮流方向(正方向)
+    primary_key:
+      - market_ts_jst
+      - asset_code
+    validations:
+      not_null:
+        - market_ts_jst
+        - area_name
+        - asset_code
+      unique:
+        - market_ts_jst
+        - asset_code
+      range:
+        flow_mw:
+          min: -50000.0
+          max: 50000.0
+      missing_dates:
+        frequency_minutes: 30
+    schedule:
+      now: "45 */3 * * *"
+      daily: "35 2 * * *"
+      backfill: manual
+    retention:
+      raw_days: 3650
+      snapshots_days: 3650
+      facts_days: 3650
+    raw_paths:
+      login_url: https://occtonet3.occto.or.jp/public/dfw/RP11/OCCTO/SD/LOGIN_login#
+      menu_selector: "#menu1-2-2-1"
+      target_date_selector: "#tgtNngp"
+      area_selector: "#areaCdAreaSumNon"
+      search_selector: "#searchBtn"
+      csv_selector: "#csvBtn"
+    parser:
+      target_table: fact_trunk_flow_30m
+    loader:
+      fact_sql: sql/upsert_fact_trunk_flow_30m.sql
+    schema_patterns:
+      slot_columns: '^\d{2}:\d{2}$'
+
+  # OCCTO unit-level generation CSV.
+  - source_name: occto_generation_unit
+    domain: hatsuden-kokai.occto.or.jp
+    page_url: https://hatsuden-kokai.occto.or.jp/hks-web-public/disclaimer-agree
+    fetch_mode: browser_csv
+    file_format: csv
+    encoding: utf-8
+    grain: 30m
+    expected_columns:
+      - 発電所コード
+      - エリア
+      - 発電所名
+      - ユニット名
+      - 発電方式・燃種
+      - 対象日
+      - 日量[kWh]
+      - 更新日時
+    primary_key:
+      - market_ts_jst
+      - asset_code
+    validations:
+      not_null:
+        - market_ts_jst
+        - asset_code
+        - plant_code
+        - plant_name
+        - unit_name
+      unique:
+        - market_ts_jst
+        - asset_code
+      range:
+        generation_kwh:
+          min: 0.0
+          max: 100000000.0
+        daily_total_kwh:
+          min: 0.0
+          max: 2000000000.0
+      missing_dates:
+        frequency_minutes: 30
+    schedule:
+      now: "50 */3 * * *"
+      daily: "40 2 * * *"
+      backfill: manual
+    retention:
+      raw_days: 3650
+      snapshots_days: 3650
+      facts_days: 3650
+    raw_paths:
+      login_url: https://hatsuden-kokai.occto.or.jp/hks-web-public/disclaimer-agree
+      search_page: https://hatsuden-kokai.occto.or.jp/hks-web-public/info/hks
+      from_date_selector: 'input[name="tgtDateDateFrom"]'
+      to_date_selector: 'input[name="tgtDateDateTo"]'
+      search_selector: "#search_btn"
+      csv_selector: "#csv_btn"
+    parser:
+      target_table: fact_generation_unit_30m
+    loader:
+      fact_sql: sql/upsert_fact_generation_unit_30m.sql
+    schema_patterns:
+      slot_columns: '^\d{2}:\d{2}\[kWh\]$'

@@ -1,0 +1,51 @@
+INSERT INTO source_snapshot (
+    source_name,
+    biz_date,
+    mode,
+    domain,
+    page_url,
+    fetch_mode,
+    file_format,
+    raw_relpath,
+    raw_filename,
+    raw_sha256,
+    raw_size_bytes,
+    encoding,
+    fetched_at,
+    expected_columns,
+    observed_columns,
+    schema_signature,
+    http_status,
+    content_type,
+    metadata
+) VALUES (
+    %(source_name)s,
+    %(biz_date)s,
+    %(mode)s,
+    %(domain)s,
+    %(page_url)s,
+    %(fetch_mode)s,
+    %(file_format)s,
+    %(raw_relpath)s,
+    %(raw_filename)s,
+    %(raw_sha256)s,
+    %(raw_size_bytes)s,
+    %(encoding)s,
+    %(fetched_at)s,
+    %(expected_columns)s,
+    %(observed_columns)s,
+    %(schema_signature)s,
+    %(http_status)s,
+    %(content_type)s,
+    %(metadata)s
+)
+ON CONFLICT (source_name, biz_date, raw_sha256, raw_relpath)
+DO UPDATE SET
+    fetched_at = EXCLUDED.fetched_at,
+    expected_columns = EXCLUDED.expected_columns,
+    observed_columns = EXCLUDED.observed_columns,
+    schema_signature = EXCLUDED.schema_signature,
+    http_status = EXCLUDED.http_status,
+    content_type = EXCLUDED.content_type,
+    metadata = source_snapshot.metadata || EXCLUDED.metadata
+RETURNING snapshot_id;
