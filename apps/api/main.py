@@ -40,6 +40,11 @@ def home() -> str:
     """
 
 
+@app.get("/healthz", tags=["health"])
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 app.include_router(spot_router)
 app.include_router(intraday_router)
 app.include_router(reserve_ratio_router)
